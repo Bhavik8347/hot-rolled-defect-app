@@ -9,9 +9,9 @@ st.set_page_config(page_title="Steel Defect Detector", layout="centered")
 # Constants
 MODEL_DIR = "converted_savedmodel/model.savedmodel"
 LABELS_PATH = "converted_savedmodel/labels.txt"
-PASS_LABELS = ["no_defect", "pass", "ok", "normal"]  # adjust if needed
+PASS_LABELS = ["no_defect", "pass", "ok", "normal"]  # update if needed
 
-# Load labels
+# Load class names
 with open(LABELS_PATH, "r") as f:
     class_names = [line.strip().lower() for line in f.readlines()]
 
@@ -23,13 +23,14 @@ def load_model():
 
 model = load_model()
 
-# Streamlit UI
+# Page title
 st.title("🧠 Hot-Rolled Steel Surface Defect Detection")
 st.markdown("Upload an image or use your webcam to detect surface defects.")
 
-tab1, tab2 = st.tabs(["📤 Upload Image", "📸 Camera"])
+# UI Tabs
+tab1, tab2 = st.tabs(["📤 Upload Image", "📸 Use Webcam"])
 
-# Function to predict
+# Prediction logic
 def predict_image(image: Image.Image):
     img = image.resize((224, 224))
     img_array = np.array(img).astype(np.float32) / 255.0
@@ -44,11 +45,9 @@ def predict_image(image: Image.Image):
 
     return predicted_label, confidence, predictions
 
-
-# ---- Upload Image tab ----
+# ----------- Tab 1: Upload -------------
 with tab1:
     uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
-
     if uploaded_file:
         image = Image.open(uploaded_file).convert("RGB")
         st.image(image, caption="Uploaded Image", use_column_width=True)
@@ -63,15 +62,14 @@ with tab1:
             st.error(f"❌ DEFECT: **{predicted_label.upper()}** ({confidence:.2f}% confident)")
 
         if st.checkbox("Show all class probabilities"):
-            st.markdown("### Class-wise Probabilities")
+            st.markdown("### 📊 Class-wise Probabilities")
             for i, prob in enumerate(predictions):
                 st.write(f"{class_names[i].capitalize()}: {prob * 100:.2f}%")
 
-
-# ---- Camera tab ----
+# ----------- Tab 2: Webcam -------------
 with tab2:
-    st.info("Take a picture using your webcam")
-    camera_img = st.camera_input("Capture from Webcam")
+    st.info("Capture a photo using your webcam")
+    camera_img = st.camera_input("📸 Take a Picture")
 
     if camera_img is not None:
         image = Image.open(camera_img).convert("RGB")
@@ -87,6 +85,6 @@ with tab2:
             st.error(f"❌ DEFECT: **{predicted_label.upper()}** ({confidence:.2f}% confident)")
 
         if st.checkbox("Show all class probabilities (Camera)"):
-            st.markdown("### Class-wise Probabilities")
+            st.markdown("### 📊 Class-wise Probabilities")
             for i, prob in enumerate(predictions):
                 st.write(f"{class_names[i].capitalize()}: {prob * 100:.2f}%")
