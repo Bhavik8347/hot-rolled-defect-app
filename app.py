@@ -1,17 +1,19 @@
 import streamlit as st
+
+# MUST be first Streamlit command
+st.set_page_config(page_title="Steel Defect Detector", layout="centered")
+
 import numpy as np
 from PIL import Image
 import tensorflow as tf
-
-# MUST be first
-st.set_page_config(page_title="Steel Defect Detector", layout="centered")
+import cv2
 
 # Constants
 MODEL_DIR = "converted_savedmodel/model.savedmodel"
 LABELS_PATH = "converted_savedmodel/labels.txt"
-PASS_LABELS = ["no_defect", "pass", "ok", "normal"]  # update if needed
+PASS_LABELS = ["no_defect", "pass", "ok", "normal"]  # Customize as per your dataset
 
-# Load class names
+# Load labels
 with open(LABELS_PATH, "r") as f:
     class_names = [line.strip().lower() for line in f.readlines()]
 
@@ -23,37 +25,36 @@ def load_model():
 
 model = load_model()
 
-# Page title
-st.title("🧠 Hot-Rolled Steel Surface Defect Detection")
-st.markdown("Upload an image or use your webcam to detect surface defects.")
+# Sidebar option for mode
+st.sidebar.title("🛠 Mode Selection")
+mode = st.sidebar.radio("Choose Input Mode:", ("Image Upload", "Real-time Camera"))
 
-# UI Tabs
-tab1, tab2 = st.tabs(["📤 Upload Image", "📸 Use Webcam"])
+# Streamlit UI
+st.title("Hot-Rolled Steel Surface Defect Detection")
 
-# Prediction logic
-def predict_image(image: Image.Image):
-    img = image.resize((224, 224))
-    img_array = np.array(img).astype(np.float32) / 255.0
-    img_array = np.expand_dims(img_array, axis=0)
-    input_tensor = tf.convert_to_tensor(img_array)
+# ---------- Mode 1: Image Upload ----------
+if mode == "Image Upload":
+    st.markdown("Upload an image")
+    uploaded_file = st.file_uploader("📤 Upload a steel surface image", type=["jpg", "jpeg", "png"])
 
-    result = model(input_tensor)
-    predictions = list(result.values())[0].numpy()[0]
-    predicted_index = int(np.argmax(predictions))
-    predicted_label = class_names[predicted_index]
-    confidence = predictions[predicted_index] * 100
-
-    return predicted_label, confidence, predictions
-
-# ----------- Tab 1: Upload -------------
-with tab1:
-    uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
     if uploaded_file:
         image = Image.open(uploaded_file).convert("RGB")
         st.image(image, caption="Uploaded Image", use_column_width=True)
 
-        predicted_label, confidence, predictions = predict_image(image)
+        # Preprocess
+        img = image.resize((224, 224))
+        img_array = np.array(img).astype(np.float32) / 255.0
+        img_array = np.expand_dims(img_array, axis=0)
+        input_tensor = tf.convert_to_tensor(img_array)
 
+        # Inference
+        result = model(input_tensor)
+        predictions = list(result.values())[0].numpy()[0]
+        predicted_index = int(np.argmax(predictions))
+        predicted_label = class_names[predicted_index]
+        confidence = predictions[predicted_index] * 100
+
+        # Show result
         st.divider()
         st.subheader("🔎 Prediction Result")
         if predicted_label in PASS_LABELS or confidence < 50:
@@ -62,29 +63,47 @@ with tab1:
             st.error(f"❌ DEFECT: **{predicted_label.upper()}** ({confidence:.2f}% confident)")
 
         if st.checkbox("Show all class probabilities"):
-            st.markdown("### 📊 Class-wise Probabilities")
+            st.markdown("### Class-wise Probabilities")
             for i, prob in enumerate(predictions):
                 st.write(f"{class_names[i].capitalize()}: {prob * 100:.2f}%")
 
-# ----------- Tab 2: Webcam -------------
-with tab2:
-    st.info("Capture a photo using your webcam")
-    camera_img = st.camera_input("📸 Take a Picture")
+# ---------- Mode 2: Real-time Camera ----------
+elif mode == "Real-time Camera":
+    st.markdown("🎥 Start real-time defect detection using your webcam")
 
-    if camera_img is not None:
-        image = Image.open(camera_img).convert("RGB")
-        st.image(image, caption="Captured Image", use_column_width=True)
+    run_camera = st.button("📷 Start Camera")
 
-        predicted_label, confidence, predictions = predict_image(image)
+    if run_camera:
+        cap = cv2.VideoCapture(0)
+        FRAME_WINDOW = st.image([])
 
-        st.divider()
-        st.subheader("🔎 Prediction Result")
-        if predicted_label in PASS_LABELS or confidence < 50:
-            st.success(f"✅ PASS — No Defect Detected ({confidence:.2f}% confident)")
-        else:
-            st.error(f"❌ DEFECT: **{predicted_label.upper()}** ({confidence:.2f}% confident)")
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret:
+                st.warning("Failed to grab frame.")
+                break
 
-        if st.checkbox("Show all class probabilities (Camera)"):
-            st.markdown("### 📊 Class-wise Probabilities")
-            for i, prob in enumerate(predictions):
-                st.write(f"{class_names[i].capitalize()}: {prob * 100:.2f}%")
+            # Resize and preprocess
+            img = cv2.resize(frame, (224, 224))
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            img_array = img.astype(np.float32) / 255.0
+            img_array = np.expand_dims(img_array, axis=0)
+            input_tensor = tf.convert_to_tensor(img_array)
+
+            # Inference
+            result = model(input_tensor)
+            predictions = list(result.values())[0].numpy()[0]
+            predicted_index = int(np.argmax(predictions))
+            predicted_label = class_names[predicted_index]
+            confidence = predictions[predicted_index] * 100
+
+            # Annotate result on frame
+            label_text = f"{'PASS ✅' if predicted_label in PASS_LABELS or confidence < 50 else f'DEFECT ❌: {predicted_label.upper()}'} ({confidence:.1f}%)"
+            color = (0, 255, 0) if predicted_label in PASS_LABELS or confidence < 50 else (0, 0, 255)
+            cv2.putText(frame, label_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
+
+            # Display frame
+            FRAME_WINDOW.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+
+        cap.release()
+        cv2.destroyAllWindows()
